@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { APP_INFO } from "@/shared/constants";
-import QueryProvider from "@/shared/providers/QueryProvider";
+import { QueryProvider } from "@/shared/providers/QueryProvider";
 import AuthProvider from "@/shared/providers/AuthProvider";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -25,10 +24,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${inter.className} antialiased`}>
         <AuthProvider>
-          <QueryProvider>
-            {children}
-            <ReactQueryDevtools initialIsOpen={false} />
-          </QueryProvider>
+          <QueryProvider>{children}</QueryProvider>
         </AuthProvider>
       </body>
     </html>

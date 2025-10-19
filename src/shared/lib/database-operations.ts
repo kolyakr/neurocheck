@@ -11,11 +11,11 @@ import {
 
 export class DatabaseOperations {
   // User operations
-  static async createUser(email: string, name: string, passwordHash: string) {
+  static async createUser(name: string, email: string, passwordHash: string) {
     return prisma.user.create({
       data: {
-        email,
         name,
+        email,
         passwordHash,
       },
     });

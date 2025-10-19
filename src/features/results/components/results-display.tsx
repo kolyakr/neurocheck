@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Card,
@@ -15,6 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/components/ui/select";
+import { LoadingSpinner } from "@/shared/components/ui/loading-spinner";
+import { ResultsSkeleton } from "@/shared/components/ui/skeletons";
+import { useDiagnosisSession } from "@/features/diagnosis/hooks/use-diagnosis";
+import { useSession } from "next-auth/react";
+import { AlertCircle, ExternalLink } from "lucide-react";
 
 type Diagnosis = "depression" | "mecfs" | "both";
 
@@ -80,15 +85,33 @@ const DIAGNOSIS_DATA: Record<
 };
 
 export default function ResultsDisplay() {
-  const [selectedDiagnosis, setSelectedDiagnosis] =
-    useState<Diagnosis>("depression");
-  const [sessionData, setSessionData] = useState<any | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const sessionId = searchParams.get("sessionId");
+  const { data: session } = useSession();
+
+  // Check if this is an anonymous session
+  const isAnonymousSession = searchParams.get("anonymous") === "true";
+  const anonymousDiagnosis = searchParams.get("diagnosis") as Diagnosis | null;
+  const anonymousConfidence = Number(searchParams.get("confidence"));
+
+  const {
+    data: sessionData,
+    isLoading,
+    error,
+  } = useDiagnosisSession(sessionId || "");
 
   const data = useMemo(() => {
+    // Handle anonymous session data from URL params
+    if (isAnonymousSession && anonymousDiagnosis) {
+      const base = DIAGNOSIS_DATA[anonymousDiagnosis];
+      return {
+        ...base,
+        confidence: Math.round(anonymousConfidence || base.confidence),
+      };
+    }
+
+    // Handle authenticated session data from database
     if (sessionData?.predictedDiagnosis) {
       const key = sessionData.predictedDiagnosis as Diagnosis;
       const base = DIAGNOSIS_DATA[key];
@@ -97,61 +120,173 @@ export default function ResultsDisplay() {
         confidence: Math.round(sessionData.confidenceScore ?? base.confidence),
       };
     }
-    return DIAGNOSIS_DATA[selectedDiagnosis];
-  }, [selectedDiagnosis, sessionData]);
+    return DIAGNOSIS_DATA["depression"];
+  }, [
+    sessionData,
+    isAnonymousSession,
+    anonymousDiagnosis,
+    anonymousConfidence,
+  ]);
 
-  useEffect(() => {
-    const id = searchParams.get("sessionId");
-    if (!id) return;
-    setLoading(true);
-    setError(null);
-    fetch(`/api/diagnosis/${id}`)
-      .then(async (r) => {
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error ?? "Failed to load session");
-        setSessionData(j.session);
-        if (j.session?.predictedDiagnosis) {
-          setSelectedDiagnosis(j.session.predictedDiagnosis as Diagnosis);
-        }
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [searchParams]);
+  // For anonymous sessions, show results immediately without loading
+  if (isAnonymousSession) {
+    if (!anonymousDiagnosis) {
+      return (
+        <div className="space-y-6">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3 text-destructive">
+                <AlertCircle className="h-5 w-5" />
+                <div>
+                  <h3 className="font-semibold">Invalid session</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Please complete the diagnosis again.
+                  </p>
+                  <div className="mt-4">
+                    <Button onClick={() => router.push("/diagnosis")}>
+                      Try Again
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    // Show results for anonymous session
+    return (
+      <div className="space-y-6">
+        {/* Anonymous session notice */}
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <p className="text-sm text-yellow-800">
+            <strong>Note:</strong> This is a temporary result. Sign up to save
+            your diagnosis history and track your progress over time.
+          </p>
+        </div>
+
+        {/* Main results display */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-2xl">Diagnosis Results</CardTitle>
+              <div
+                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-white font-semibold ${data.color}`}
+              >
+                <span>{data.title}</span>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Confidence score */}
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Confidence Score</div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full ${data.color}`}
+                  style={{ width: `${data.confidence}%` }}
+                ></div>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {data.confidence}% confidence
+              </div>
+            </div>
+
+            {/* Explanation */}
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Explanation</div>
+              <p className="text-sm text-muted-foreground">
+                {data.explanation}
+              </p>
+            </div>
+
+            {/* What this means */}
+            <div className="space-y-2">
+              <div className="text-sm font-medium">What this means</div>
+              <p className="text-sm text-muted-foreground">{data.meaning}</p>
+            </div>
+
+            {/* Recommendations */}
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Recommendations</div>
+              <ul className="space-y-1">
+                {data.recommendations.map((rec, index) => (
+                  <li
+                    key={index}
+                    className="text-sm text-muted-foreground flex items-start gap-2"
+                  >
+                    <span className="text-blue-600 mt-1">•</span>
+                    <span>{rec}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-3 pt-4">
+              <Button
+                onClick={() => router.push("/chat")}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Explain more
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => router.push("/auth/sign-up")}
+                className="flex items-center gap-2"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Sign up to save results
+              </Button>
+            </div>
+
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-sm text-blue-800">
+                <strong>Want to save your results?</strong> Sign up for a free
+                account to track your diagnosis history and monitor your
+                progress over time.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return <ResultsSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              <div>
+                <h3 className="font-semibold">Error loading results</h3>
+                <p className="text-sm text-muted-foreground">
+                  {error instanceof Error
+                    ? error.message
+                    : "Something went wrong"}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Testing selector - to be removed when connected to FastAPI */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Test Results (Temporary)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Select diagnosis to view:
-            </label>
-            <Select
-              value={selectedDiagnosis}
-              onValueChange={(value: Diagnosis) => setSelectedDiagnosis(value)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="depression">Depression</SelectItem>
-                <SelectItem value="mecfs">ME/CFS</SelectItem>
-                <SelectItem value="both">Both</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Main results display */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Diagnosis Results</CardTitle>
+            <CardTitle className="text-2xl">Diagnosis Results</CardTitle>
             <div
               className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-white font-semibold ${data.color}`}
             >
@@ -160,12 +295,6 @@ export default function ResultsDisplay() {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          {loading && (
-            <div className="text-sm text-muted-foreground">
-              Loading session...
-            </div>
-          )}
-          {error && <div className="text-sm text-destructive">{error}</div>}
           {/* Confidence score */}
           <div className="space-y-2">
             <div className="text-sm font-medium">Confidence Score</div>
@@ -216,10 +345,31 @@ export default function ResultsDisplay() {
             >
               Explain more
             </Button>
-            <Button variant="outline" onClick={() => router.push("/history")}>
-              Save to history
-            </Button>
+            {session?.user ? (
+              <Button variant="outline" onClick={() => router.push("/history")}>
+                Save to history
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => router.push("/auth/sign-up")}
+                className="flex items-center gap-2"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Sign up to save results
+              </Button>
+            )}
           </div>
+
+          {!session?.user && (
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-sm text-blue-800">
+                <strong>Want to save your results?</strong> Sign up for a free
+                account to track your diagnosis history and monitor your
+                progress over time.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

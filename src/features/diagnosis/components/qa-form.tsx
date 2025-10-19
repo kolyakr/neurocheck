@@ -17,6 +17,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/shared/components/ui/card";
+import { LoadingSpinner } from "@/shared/components/ui/loading-spinner";
+import { Progress } from "@/shared/components/ui/progress";
 import { z } from "zod";
 import {
   Dialog,
@@ -25,6 +27,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/shared/components/ui/dialog";
+import { useCreateDiagnosis } from "../hooks/use-diagnosis";
+import { useSession } from "next-auth/react";
+import {
+  HelpCircle,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle,
+} from "lucide-react";
 
 type Answers = {
   age?: number;
@@ -252,6 +262,8 @@ export default function DiagnosisQAForm() {
   const [answers, setAnswers] = useState<Answers>({});
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const createDiagnosis = useCreateDiagnosis();
 
   const q = QUESTIONS[step];
   const isLast = step === QUESTIONS.length - 1;
@@ -293,18 +305,34 @@ export default function DiagnosisQAForm() {
     try {
       const parsed = schema.parse(answers);
 
-      const res = await fetch("/api/diagnosis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed),
-      });
+      if (session?.user) {
+        // User is logged in, use authenticated API
+        const result = await createDiagnosis.mutateAsync(parsed);
+        router.push(`/results?sessionId=${result.sessionId}`);
+      } else {
+        // User is not logged in, use public API
+        const response = await fetch("/api/diagnosis/public", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(parsed),
+        });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error ?? "Failed to create diagnosis session");
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to create diagnosis session");
+        }
+
+        // For anonymous users, pass the prediction data directly in URL
+        const params = new URLSearchParams({
+          sessionId: data.sessionId,
+          diagnosis: data.predictedDiagnosis,
+          confidence: data.confidenceScore.toString(),
+          anonymous: "true",
+        });
+        router.push(`/results?${params.toString()}`);
       }
-
-      router.push(`/results?sessionId=${data.sessionId}`);
     } catch (e: any) {
       setError(
         e?.message ?? "Please complete required fields with valid values."
@@ -312,83 +340,140 @@ export default function DiagnosisQAForm() {
     }
   }
 
+  const progress = ((step + 1) / QUESTIONS.length) * 100;
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Diagnosis questionnaire</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="text-sm text-muted-foreground">
-          Question {step + 1} of {QUESTIONS.length}
-        </div>
-        <div className="space-y-2">
-          <div className="font-medium">{q.label}</div>
-          {q.type === "number" && (
-            <Input
-              type="number"
-              inputMode="decimal"
-              min={q.min}
-              max={q.max}
-              step={q.step ?? 1}
-              value={(answers[q.key] as number | undefined) ?? ""}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder={q.placeholder}
-            />
-          )}
-          {q.type === "select" && (
-            <Select
-              value={(answers[q.key] as string | undefined) ?? ""}
-              onValueChange={(v) => setValue(v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select an option" />
-              </SelectTrigger>
-              <SelectContent>
-                {q.options?.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {q.type === "text" && (
-            <Textarea
-              value={(answers[q.key] as string | undefined) ?? ""}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder={q.placeholder}
-            />
-          )}
-          <div className="flex items-center gap-3 pt-1">
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="ghost" className="h-8 px-2">
-                  Explain
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>{q.label}</DialogTitle>
-                </DialogHeader>
-                <div className="text-sm text-muted-foreground">
-                  {q.explain ??
-                    "This input contributes to the model's prediction."}
-                </div>
-              </DialogContent>
-            </Dialog>
-            {error && <span className="text-destructive text-sm">{error}</span>}
+    <Card className="w-full max-w-2xl mx-auto">
+      <CardHeader className="space-y-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-2xl">Diagnosis Questionnaire</CardTitle>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>
+              Question {step + 1} of {QUESTIONS.length}
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center justify-between pt-2">
-          <Button variant="outline" onClick={prev} disabled={step === 0}>
+        {/* Progress bar */}
+        <div className="space-y-2">
+          <Progress value={progress} className="h-2" />
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>{Math.round(progress)}% complete</span>
+            <span>{QUESTIONS.length - step - 1} questions remaining</span>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold">{q.label}</h3>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                    <HelpCircle className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <HelpCircle className="h-5 w-5" />
+                      {q.label}
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="text-sm text-muted-foreground">
+                    {q.explain ??
+                      "This input contributes to the model's prediction."}
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {q.type === "number" && (
+              <Input
+                type="number"
+                inputMode="decimal"
+                min={q.min}
+                max={q.max}
+                step={q.step ?? 1}
+                value={(answers[q.key] as number | undefined) ?? ""}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={q.placeholder}
+                className="h-12 text-base"
+              />
+            )}
+            {q.type === "select" && (
+              <Select
+                value={(answers[q.key] as string | undefined) ?? ""}
+                onValueChange={(v) => setValue(v)}
+              >
+                <SelectTrigger className="h-12 text-base">
+                  <SelectValue placeholder="Select an option" />
+                </SelectTrigger>
+                <SelectContent>
+                  {q.options?.map((o) => (
+                    <SelectItem
+                      key={o.value}
+                      value={o.value}
+                      className="text-base"
+                    >
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {q.type === "text" && (
+              <Textarea
+                value={(answers[q.key] as string | undefined) ?? ""}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={q.placeholder}
+                className="min-h-[100px] text-base"
+              />
+            )}
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between pt-4 border-t">
+          <Button
+            variant="outline"
+            onClick={prev}
+            disabled={step === 0}
+            className="flex items-center gap-2"
+          >
+            <ChevronLeft className="h-4 w-4" />
             Back
           </Button>
+
           {!isLast ? (
-            <Button onClick={next}>Next</Button>
+            <Button onClick={next} className="flex items-center gap-2">
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           ) : (
-            <Button onClick={submit} className="bg-blue-600 hover:bg-blue-700">
-              Get prediction
+            <Button
+              onClick={submit}
+              disabled={createDiagnosis.isPending}
+              className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2"
+            >
+              {createDiagnosis.isPending ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4" />
+                  Get Prediction
+                </>
+              )}
             </Button>
           )}
         </div>

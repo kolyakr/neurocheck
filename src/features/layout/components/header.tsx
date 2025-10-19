@@ -2,25 +2,22 @@
 import { APP_INFO } from "@/shared/constants";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Clock, LogOut, User, Book } from "lucide-react";
+import { Clock, LogOut, User, Book } from "lucide-react";
 import { useAuth } from "@/features/auth";
 import { Button } from "@/shared/components/ui/button";
 
 const navigationLinks = [
   {
-    href: "/diagnosis",
-    label: "Diagnosis",
-    icon: Activity,
-  },
-  {
     href: "/history",
     label: "History",
     icon: Clock,
+    requiresAuth: true,
   },
   {
     href: "/docs",
     label: "Docs",
     icon: Book,
+    requiresAuth: false,
   },
 ];
 
@@ -40,31 +37,35 @@ export default function Header() {
         </Link>
 
         <div className="flex items-center gap-2">
+          {navigationLinks.map((link) => {
+            // Only show links that don't require auth or when user is authenticated
+            if (link.requiresAuth && !isAuthenticated) return null;
+
+            const Icon = link.icon;
+            const isActive = pathname === link.href;
+
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`
+                  flex items-center gap-2 px-4 py-2 rounded-lg font-medium
+                  transition-all duration-200
+                  ${
+                    isActive
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-gray-700 hover:bg-gray-100 hover:text-blue-600"
+                  }
+                `}
+              >
+                <Icon className="w-4 h-4" />
+                <span>{link.label}</span>
+              </Link>
+            );
+          })}
+
           {isAuthenticated ? (
             <>
-              {navigationLinks.map((link) => {
-                const Icon = link.icon;
-                const isActive = pathname === link.href;
-
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className={`
-                      flex items-center gap-2 px-4 py-2 rounded-lg font-medium
-                      transition-all duration-200
-                      ${
-                        isActive
-                          ? "bg-blue-600 text-white shadow-sm"
-                          : "text-gray-700 hover:bg-gray-100 hover:text-blue-600"
-                      }
-                    `}
-                  >
-                    <Icon className="w-4 h-4" />
-                    <span>{link.label}</span>
-                  </Link>
-                );
-              })}
               <Link
                 href="/diagnosis"
                 className="ml-2 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold shadow-sm hover:bg-blue-700 transition-colors"
@@ -89,6 +90,12 @@ export default function Header() {
           ) : (
             <div className="flex items-center gap-2">
               <Link
+                href="/diagnosis"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold shadow-sm hover:bg-blue-700 transition-colors"
+              >
+                Start Diagnosis
+              </Link>
+              <Link
                 href="/auth/sign-in"
                 className="px-4 py-2 text-gray-700 hover:text-blue-600 transition-colors"
               >
@@ -96,7 +103,7 @@ export default function Header() {
               </Link>
               <Link
                 href="/auth/sign-up"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
               >
                 Sign Up
               </Link>

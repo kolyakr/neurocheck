@@ -1,7 +1,16 @@
 import React from "react";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/features/auth";
+import { redirect } from "next/navigation";
 import { HistoryOverview } from "@/features/history";
 
-const HistoryPage = () => {
+const HistoryPage = async () => {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user) {
+    redirect("/auth/sign-in?callbackUrl=/history");
+  }
+
   return (
     <div className="space-y-6">
       <div>
