@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -82,9 +82,41 @@ const DIAGNOSIS_DATA: Record<
 export default function ResultsDisplay() {
   const [selectedDiagnosis, setSelectedDiagnosis] =
     useState<Diagnosis>("depression");
+  const [sessionData, setSessionData] = useState<any | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const data = DIAGNOSIS_DATA[selectedDiagnosis];
+  const data = useMemo(() => {
+    if (sessionData?.predictedDiagnosis) {
+      const key = sessionData.predictedDiagnosis as Diagnosis;
+      const base = DIAGNOSIS_DATA[key];
+      return {
+        ...base,
+        confidence: Math.round(sessionData.confidenceScore ?? base.confidence),
+      };
+    }
+    return DIAGNOSIS_DATA[selectedDiagnosis];
+  }, [selectedDiagnosis, sessionData]);
+
+  useEffect(() => {
+    const id = searchParams.get("sessionId");
+    if (!id) return;
+    setLoading(true);
+    setError(null);
+    fetch(`/api/diagnosis/${id}`)
+      .then(async (r) => {
+        const j = await r.json();
+        if (!r.ok) throw new Error(j?.error ?? "Failed to load session");
+        setSessionData(j.session);
+        if (j.session?.predictedDiagnosis) {
+          setSelectedDiagnosis(j.session.predictedDiagnosis as Diagnosis);
+        }
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [searchParams]);
 
   return (
     <div className="space-y-6">
@@ -128,6 +160,12 @@ export default function ResultsDisplay() {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
+          {loading && (
+            <div className="text-sm text-muted-foreground">
+              Loading session...
+            </div>
+          )}
+          {error && <div className="text-sm text-destructive">{error}</div>}
           {/* Confidence score */}
           <div className="space-y-2">
             <div className="text-sm font-medium">Confidence Score</div>

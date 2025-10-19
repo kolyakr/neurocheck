@@ -289,13 +289,26 @@ export default function DiagnosisQAForm() {
   function prev() {
     if (step > 0) setStep((s) => s - 1);
   }
-  function submit() {
+  async function submit() {
     try {
       const parsed = schema.parse(answers);
-      const query = encodeURIComponent(JSON.stringify(parsed));
-      router.push(`/results?data=${query}`);
+
+      const res = await fetch("/api/diagnosis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error ?? "Failed to create diagnosis session");
+      }
+
+      router.push(`/results?sessionId=${data.sessionId}`);
     } catch (e: any) {
-      setError("Please complete required fields with valid values.");
+      setError(
+        e?.message ?? "Please complete required fields with valid values."
+      );
     }
   }
 
