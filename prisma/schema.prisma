@@ -1,0 +1,191 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum DiagnosisType {
+  depression
+  mecfs
+  both
+}
+
+enum TrendType {
+  improving
+  stable
+  declining
+}
+
+enum MessageType {
+  user
+  assistant
+  system
+}
+
+enum Gender {
+  male
+  female
+  other
+}
+
+enum WorkStatus {
+  working
+  partially_working
+  not_working
+}
+
+enum SocialActivityLevel {
+  very_low
+  low
+  medium
+  high
+  very_high
+}
+
+enum ExerciseFrequency {
+  never
+  rarely
+  sometimes
+  often
+  daily
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+  FATAL
+}
+
+enum Theme {
+  light
+  dark
+  system
+}
+
+// Models
+model User {
+  id                     String    @id @default(uuid())
+  email                  String    @unique
+  name                   String
+  passwordHash           String    @map("password_hash")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  lastLogin              DateTime? @map("last_login")
+  isActive               Boolean   @default(true) @map("is_active")
+  emailVerified          Boolean   @default(false) @map("email_verified")
+  emailVerificationToken String?   @map("email_verification_token")
+  passwordResetToken     String?   @map("password_reset_token")
+  passwordResetExpires   DateTime? @map("password_reset_expires")
+
+  // Relations
+  diagnosisSessions DiagnosisSession[]
+  chatMessages      ChatMessage[]
+  preferences       UserPreferences?
+  systemLogs        SystemLog[]
+
+  @@map("users")
+}
+
+model DiagnosisSession {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  sessionToken String    @unique @map("session_token")
+  status       String    @default("in_progress")
+  startedAt    DateTime  @default(now()) @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  ipAddress    String?   @map("ip_address")
+  userAgent    String?   @map("user_agent")
+
+  // Symptom Data
+  age                       Int?
+  gender                    Gender?
+  fatigueSeverityScaleScore Float?               @map("fatigue_severity_scale_score")
+  depressionPhq9Score       Int?                 @map("depression_phq9_score")
+  pemPresent                Boolean?             @map("pem_present")
+  pemDurationHours          Float?               @map("pem_duration_hours")
+  sleepQualityIndex         Int?                 @map("sleep_quality_index")
+  brainFogLevel             Int?                 @map("brain_fog_level")
+  physicalPainScore         Int?                 @map("physical_pain_score")
+  stressLevel               Int?                 @map("stress_level")
+  workStatus                WorkStatus?          @map("work_status")
+  socialActivityLevel       SocialActivityLevel? @map("social_activity_level")
+  exerciseFrequency         ExerciseFrequency?   @map("exercise_frequency")
+  meditationOrMindfulness   Boolean?             @map("meditation_or_mindfulness")
+  hoursOfSleepPerNight      Float?               @map("hours_of_sleep_per_night")
+  notes                     String?              @db.LongText
+
+  // ML Model Results
+  predictedDiagnosis DiagnosisType? @map("predicted_diagnosis")
+  confidenceScore    Float?         @map("confidence_score")
+  modelVersion       String?        @map("model_version")
+  processingTimeMs   Int?           @map("processing_time_ms")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatMessages ChatMessage[]
+  systemLogs   SystemLog[]
+
+  @@map("diagnosis_sessions")
+}
+
+model ChatMessage {
+  id                 String      @id @default(uuid())
+  diagnosisSessionId String      @map("diagnosis_session_id")
+  userId             String      @map("user_id")
+  messageType        MessageType @map("message_type")
+  content            String      @db.LongText
+  metadata           Json?
+  createdAt          DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  diagnosisSession DiagnosisSession @relation(fields: [diagnosisSessionId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("chat_messages")
+}
+
+model UserPreferences {
+  id                   String   @id @default(uuid())
+  userId               String   @unique @map("user_id")
+  theme                Theme    @default(light)
+  notificationsEnabled Boolean  @default(true) @map("notifications_enabled")
+  emailNotifications   Boolean  @default(true) @map("email_notifications")
+  dataSharingConsent   Boolean  @default(false) @map("data_sharing_consent")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model SystemLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  sessionId String?  @map("session_id")
+  logLevel  LogLevel @map("log_level")
+  message   String   @db.LongText
+  metadata  Json?
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  diagnosisSession DiagnosisSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@map("system_logs")
+}

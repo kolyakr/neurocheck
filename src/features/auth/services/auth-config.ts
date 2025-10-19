@@ -1,5 +1,7 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import bcrypt from "bcryptjs";
+import { DatabaseOperations } from "@/shared/lib/database-operations";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -14,20 +16,43 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        // TODO: Replace with actual API call to your backend
-        // For now, using mock authentication
-        if (
-          credentials.email === "test@example.com" &&
-          credentials.password === "password"
-        ) {
-          return {
-            id: "1",
-            email: credentials.email,
-            name: "Test User",
-          };
-        }
+        try {
+          // Find user in database
+          const user = await DatabaseOperations.findUserByEmail(
+            credentials.email
+          );
 
-        return null;
+          if (!user) {
+            return null;
+          }
+
+          // Verify password
+          const isValidPassword = await bcrypt.compare(
+            credentials.password,
+            user.passwordHash
+          );
+
+          if (!isValidPassword) {
+            return null;
+          }
+
+          // Update last login
+          await DatabaseOperations.createSystemLog(
+            "INFO",
+            "User signed in successfully",
+            { userId: user.id },
+            user.id
+          );
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+          };
+        } catch (error) {
+          console.error("Auth error:", error);
+          return null;
+        }
       },
     }),
   ],

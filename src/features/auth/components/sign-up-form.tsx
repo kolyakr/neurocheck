@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import {
@@ -41,16 +42,47 @@ export default function SignUpForm() {
     }
 
     try {
-      // TODO: Replace with actual API call to your backend
-      // For now, just simulate success
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Create user account
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
 
-      // Redirect to sign-in after successful registration
-      router.push(
-        "/auth/sign-in?message=Registration successful. Please sign in."
-      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Registration failed");
+      }
+
+      // Automatically sign in the user after successful registration
+      const signInResult = await signIn("credentials", {
+        email: formData.email,
+        password: formData.password,
+        redirect: false,
+      });
+
+      if (signInResult?.error) {
+        // If auto sign-in fails, redirect to sign-in page with success message
+        router.push(
+          "/auth/sign-in?message=Registration successful. Please sign in."
+        );
+      } else {
+        // Successfully signed in, redirect to home page
+        router.push("/");
+      }
     } catch (err) {
-      setError("An error occurred. Please try again.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred. Please try again."
+      );
     } finally {
       setIsLoading(false);
     }
